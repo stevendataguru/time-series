@@ -1,0 +1,404 @@
+# import packages
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+%matplotlib inline
+from IPython.display import display, HTML, display_html
+import seaborn as sns
+import datetime
+
+
+# set formatting
+pd.set_option('display.max_columns', 100)
+pd.set_option('display.max_rows', 100)
+
+# read in CSV file data
+df = pd.read_csv('reviews.csv')
+
+
+# look at data
+display(df.head())
+
+# look a shape of data
+display(df.shape)
+
+# look at data types. Ideally look at all rows. Only look at first five here for minimal output.
+display(df.iloc[:5,:5].dtypes)
+
+# see if any columns have nulls. Ideally look at all rows. Only look at first five here for minimal output.
+display(df.iloc[:5,:5].isnull().any())
+
+# display descriptive statistics
+display(df.describe(percentiles=[0.25,0.5,0.75,0.85,0.95,0.99]))
+
+
+# Rename columns
+df = df.rename(columns = {'date': 'ds', 'listing_id': 'ts'})
+
+# Group data by number of listings per date
+df_example = df.groupby(by = 'ds').agg({'ts': 'count'})
+
+# Change index to datetime
+df_example.index = pd.to_datetime(df_example.index)
+
+# Set frequency of time series
+df_example = df_example.asfreq(freq='1D')
+
+# Sort the values
+df_example = df_example.sort_index(ascending = True)
+
+# Fill values with 0
+df_example = df_example.fillna(value = 0)
+
+# Show the end of the data
+display(df_example.tail())
+
+
+# Plot time series data
+f, ax = plt.subplots(1,1)
+ax.plot(df_example['ts'])
+
+# Add title
+ax.set_title('Time-series graph for 1 time-series example')
+
+# Rotate x-labels
+ax.tick_params(axis = 'x', rotation = 45)
+
+# Show graph
+plt.show()
+plt.close()
+
+
+from statsmodels.tsa.stattools import adfuller
+def test_stationarity(df, ts):
+    """
+    Test stationarity using moving average statistics and Dickey-Fuller test
+    Source: https://www.analyticsvidhya.com/blog/2016/02/time-series-forecasting-codes-python/
+    """
+    
+    # Determing rolling statistics
+    rolmean = df[ts].rolling(window = 12, center = False).mean()
+    rolstd = df[ts].rolling(window = 12, center = False).std()
+    
+    # Plot rolling statistics:
+    orig = plt.plot(df[ts], 
+                    color = 'blue', 
+                    label = 'Original')
+    mean = plt.plot(rolmean, 
+                    color = 'red', 
+                    label = 'Rolling Mean')
+    std = plt.plot(rolstd, 
+                   color = 'black', 
+                   label = 'Rolling Std')
+    plt.legend(loc = 'best')
+    plt.title('Rolling Mean & Standard Deviation for %s' %(ts))
+    plt.xticks(rotation = 45)
+    plt.show(block = False)
+    plt.close()
+    
+    # Perform Dickey-Fuller test:
+    # Null Hypothesis (H_0): time series is not stationary
+    # Alternate Hypothesis (H_1): time series is stationary
+    print 'Results of Dickey-Fuller Test:'
+    dftest = adfuller(df[ts], 
+                      autolag='AIC')
+    dfoutput = pd.Series(dftest[0:4], 
+                         index = ['Test Statistic',
+                                  'p-value',
+                                  '# Lags Used',
+                                  'Number of Observations Used'])
+    for key, value in dftest[4].items():
+        dfoutput['Critical Value (%s)'%key] = value
+    print dfoutput
+    
+    
+    
+ test_stationarity(df = df_example, ts = 'ts')
+ 
+ 
+ 
+ def plot_transformed_data(df, ts, ts_transform):
+  """
+  Plot transformed and original time series data
+  """
+  # Plot time series data
+  f, ax = plt.subplots(1,1)
+  ax.plot(df[ts])
+  ax.plot(df[ts_transform], color = 'red')
+
+  # Add title
+  ax.set_title('%s and %s time-series graph' %(ts, ts_transform))
+
+  # Rotate x-labels
+  ax.tick_params(axis = 'x', rotation = 45)
+
+  # Add legend
+  ax.legend([ts, ts_transform])
+  
+  plt.show()
+  plt.close()
+  
+  return
+  
+  
+  
+  # Transformation - log ts
+df_example['ts_log'] = df_example['ts'].apply(lambda x: np.log(x))
+
+# Transformation - 7-day moving averages of log ts
+df_example['ts_log_moving_avg'] = df_example['ts_log'].rolling(window = 7,
+                                                               center = False).mean()
+
+# Transformation - 7-day moving average ts
+df_example['ts_moving_avg'] = df_example['ts'].rolling(window = 7,
+                                                       center = False).mean()
+
+# Transformation - Difference between logged ts and first-order difference logged ts
+# df_example['ts_log_diff'] = df_example['ts_log'] - df_example['ts_log'].shift()
+df_example['ts_log_diff'] = df_example['ts_log'].diff()
+
+# Transformation - Difference between ts and moving average ts
+df_example['ts_moving_avg_diff'] = df_example['ts'] - df_example['ts_moving_avg']
+
+# Transformation - Difference between logged ts and logged moving average ts
+df_example['ts_log_moving_avg_diff'] = df_example['ts_log'] - df_example['ts_log_moving_avg']
+
+# Transformation - Difference between logged ts and logged moving average ts
+df_example_transform = df_example.dropna()
+
+# Transformation - Logged exponentially weighted moving averages (EWMA) ts
+df_example_transform['ts_log_ewma'] = df_example_transform['ts_log'].ewm(halflife = 7,
+                                                                         ignore_na = False,
+                                                                         min_periods = 0,
+                                                                         adjust = True).mean()
+
+# Transformation - Difference between logged ts and logged EWMA ts
+df_example_transform['ts_log_ewma_diff'] = df_example_transform['ts_log'] - df_example_transform['ts_log_ewma']
+
+# Display data
+display(df_example_transform.head())
+
+# Plot data
+plot_transformed_data(df = df_example, 
+                      ts = 'ts', 
+                      ts_transform = 'ts_log')
+# Plot data
+plot_transformed_data(df = df_example, 
+                      ts = 'ts_log', 
+                      ts_transform = 'ts_log_moving_avg')
+
+# Plot data
+plot_transformed_data(df = df_example_transform, 
+                      ts = 'ts', 
+                      ts_transform = 'ts_moving_avg')
+
+# Plot data
+plot_transformed_data(df = df_example_transform, 
+                      ts = 'ts_log', 
+                      ts_transform = 'ts_log_diff')
+
+# Plot data
+plot_transformed_data(df = df_example_transform, 
+                      ts = 'ts', 
+                      ts_transform = 'ts_moving_avg_diff')
+
+# Plot data
+plot_transformed_data(df = df_example_transform, 
+                      ts = 'ts_log', 
+                      ts_transform = 'ts_log_moving_avg_diff')
+
+# Plot data
+plot_transformed_data(df = df_example_transform, 
+                      ts = 'ts_log', 
+                      ts_transform = 'ts_log_ewma')
+
+# Plot data
+plot_transformed_data(df = df_example_transform, 
+                      ts = 'ts_log', 
+                      ts_transform = 'ts_log_ewma_diff')
+
+# Perform stationarity test
+test_stationarity(df = df_example_transform, 
+                  ts = 'ts_log')
+
+# Perform stationarity test
+test_stationarity(df = df_example_transform, 
+                  ts = 'ts_moving_avg')
+
+# Perform stationarity test
+test_stationarity(df = df_example_transform, 
+                  ts = 'ts_log_moving_avg')
+
+# Perform stationarity test
+test_stationarity(df = df_example_transform,
+                  ts = 'ts_log_diff')
+
+# Perform stationarity test
+test_stationarity(df = df_example_transform,
+                  ts = 'ts_moving_avg_diff')
+
+# Perform stationarity test
+test_stationarity(df = df_example_transform,
+                  ts = 'ts_log_moving_avg_diff')
+
+# Perform stationarity test
+test_stationarity(df = df_example_transform, 
+                  ts = 'ts_log_ewma')
+
+# Perform stationarity test
+test_stationarity(df = df_example_transform,
+                  ts = 'ts_log_ewma_diff')
+                  
+                  
+                  
+def plot_decomposition(df, ts, trend, seasonal, residual):
+  """
+  Plot time series data
+  """
+  f, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2,2, figsize = (15, 5), sharex = True)
+
+  ax1.plot(df[ts], label = 'Original')
+  ax1.legend(loc = 'best')
+  ax1.tick_params(axis = 'x', rotation = 45)
+
+  ax2.plot(df[trend], label = 'Trend')
+  ax2.legend(loc = 'best')
+  ax2.tick_params(axis = 'x', rotation = 45)
+
+  ax3.plot(df[seasonal],label = 'Seasonality')
+  ax3.legend(loc = 'best')
+  ax3.tick_params(axis = 'x', rotation = 45)
+
+  ax4.plot(df[residual], label = 'Residuals')
+  ax4.legend(loc = 'best')
+  ax4.tick_params(axis = 'x', rotation = 45)
+  plt.tight_layout()
+
+  # Show graph
+  plt.suptitle('Trend, Seasonal, and Residual Decomposition of %s' %(ts), 
+               x = 0.5, 
+               y = 1.05, 
+               fontsize = 18)
+  plt.show()
+  plt.close()
+  
+  return
+  
+  
+  
+  from statsmodels.tsa.seasonal import seasonal_decompose
+decomposition = seasonal_decompose(df_example_transform['ts_log'], freq = 365)
+
+df_example_transform.loc[:,'trend'] = decomposition.trend
+df_example_transform.loc[:,'seasonal'] = decomposition.seasonal
+df_example_transform.loc[:,'residual'] = decomposition.resid
+
+plot_decomposition(df = df_example_transform, 
+                   ts = 'ts_log', 
+                   trend = 'trend',
+                   seasonal = 'seasonal', 
+                   residual = 'residual')
+
+test_stationarity(df = df_example_transform.dropna(), ts = 'residual')
+
+
+
+
+def plot_acf_pacf(df, ts):
+  """
+  Plot auto-correlation function (ACF) and partial auto-correlation (PACF) plots
+  """
+  f, (ax1, ax2) = plt.subplots(1,2, figsize = (10, 5)) 
+
+  #Plot ACF: 
+
+  ax1.plot(lag_acf)
+  ax1.axhline(y=0,linestyle='--',color='gray')
+  ax1.axhline(y=-1.96/np.sqrt(len(df[ts])),linestyle='--',color='gray')
+  ax1.axhline(y=1.96/np.sqrt(len(df[ts])),linestyle='--',color='gray')
+  ax1.set_title('Autocorrelation Function for %s' %(ts))
+
+  #Plot PACF:
+  ax2.plot(lag_pacf)
+  ax2.axhline(y=0,linestyle='--',color='gray')
+  ax2.axhline(y=-1.96/np.sqrt(len(df[ts])),linestyle='--',color='gray')
+  ax2.axhline(y=1.96/np.sqrt(len(df[ts])),linestyle='--',color='gray')
+  ax2.set_title('Partial Autocorrelation Function for %s' %(ts))
+  
+  plt.tight_layout()
+  plt.show()
+  plt.close()
+  
+  return
+  
+  
+  
+  #ACF and PACF plots:
+from statsmodels.tsa.stattools import acf, pacf
+
+# determine ACF and PACF
+lag_acf = acf(np.array(df_example_transform['ts_log_diff']), nlags = 20)
+lag_pacf = pacf(np.array(df_example_transform['ts_log_diff']), nlags = 20)
+
+# plot ACF and PACF
+plot_acf_pacf(df = df_example_transform, ts = 'ts_log_diff')
+
+
+
+def run_arima_model(df, ts, p, d, q):
+  """
+  Run ARIMA model
+  """
+  from statsmodels.tsa.arima_model import ARIMA
+
+  # fit ARIMA model on time series
+  model = ARIMA(df[ts], order=(p, d, q))  
+  results_ = model.fit(disp=-1)  
+  
+  # get lengths correct to calculate RSS
+  len_results = len(results_.fittedvalues)
+  ts_modified = df[ts][-len_results:]
+  
+  # calculate root mean square error (RMSE) and residual sum of squares (RSS)
+  rss = sum((results_.fittedvalues - ts_modified)**2)
+  rmse = np.sqrt(rss / len(df[ts]))
+  
+  # plot fit
+  plt.plot(df[ts])
+  plt.plot(results_.fittedvalues, color = 'red')
+  plt.title('For ARIMA model (%i, %i, %i) for ts %s, RSS: %.4f, RMSE: %.4f' %(p, d, q, ts, rss, rmse))
+  
+  plt.show()
+  plt.close()
+  
+  return results_
+  
+  
+  
+  # Note: I do the differencing in the transformation of the data 'ts_log_diff'
+# AR model with 1st order differencing - ARIMA (1,0,0)
+model_AR = run_arima_model(df = df_example_transform, 
+                           ts = 'ts_log_diff', 
+                           p = 1, 
+                           d = 0, 
+                           q = 0)
+
+# MA model with 1st order differencing - ARIMA (0,0,1)
+model_MA = run_arima_model(df = df_example_transform, 
+                           ts = 'ts_log_diff', 
+                           p = 0, 
+                           d = 0, 
+                           q = 1)
+
+# ARMA model with 1st order differencing - ARIMA (1,0,1)
+model_MA = run_arima_model(df = df_example_transform, 
+                           ts = 'ts_log_diff', 
+                           p = 1, 
+                           d = 0, 
+                           q = 1)
+                           
+                           
+                           
+https://colab.research.google.com/drive/1oBXX3k3OOjdivwlDhpLmAqfq5B5dzFR1#scrollTo=Vu0387ctTS93
+  
+  
